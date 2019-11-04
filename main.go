@@ -46,77 +46,116 @@ func readBetha(filename string) {
 	}
 }
 
-func find_lines(fileName string) chan models.Line {
-	output := make(chan models.Line)
+func line(filename string) chan string {
+	output := make(chan string)
 
 	go func() {
-		defer wg.Done()
-		file, err := os.Open("./inputFile/testFile.txt")
+		file, err := os.Open(filename)
 		check(err)
 		defer file.Close()
-		scanner := bufio.NewScanner(file)
 		cont := 0
+		scanner := bufio.NewScanner(file)
+
 		for scanner.Scan() {
 			if cont == 0 || cont == 1 {
+				cont++
 				continue
 			}
-			line := models.Line{Id: (cont - 1)}
-			outgoing := strings.Split(scanner.Text(), " ")
-			outgoingTotal := len(outgoing)
-			line.Out = make([]int, outgoingTotal, outgoingTotal)
-			for i := range outgoing {
-				if s, err := strconv.Atoi(outgoing[i]); err == nil {
-					line.Out = append(line.Out, s)
-				}
-				check(err)
-			}
-			output <- line
+			s := strconv.Itoa(cont - 1)
+			newLine := s + " " + scanner.Text()
+			fmt.Println(newLine)
+			output <- newLine
+			cont++
 		}
 		if err := scanner.Err(); err != nil {
 			check(err)
 		}
-		//defer wg.Wait()
+
 		close(output)
 	}()
+
 	return output
 }
 
-func mapFunc(line models.Line, output chan interface{}) {
+func find_files(dirname string) chan interface{} {
+	output := make(chan interface{})
+
+	go func() {
+		_find_files(dirname, output)
+		close(output)
+	}()
+
+	return output
+}
+
+func _find_files(dirname string, output chan interface{}) {
+	dir, _ := os.Open(dirname)
+	dirnames, _ := dir.Readdirnames(-1)
+
+	for i := 0; i < len(dirnames); i++ {
+		fullpath := dirname + "/" + dirnames[i]
+		file, _ := os.Stat(fullpath)
+
+		if file.IsDir() {
+			_find_files(fullpath, output)
+		} else {
+			output <- fullpath
+		}
+	}
+}
+
+func mapFunc(filename interface{}, output chan interface{}) {
 	fmt.Println("Enter Mapper")
 	results := map[int]models.Vertex{}
-	var vertex = models.Vertex{Id: line.Id}
-	//ObtenerPageRank
-	if val, ok := pageRanks[vertex.Id]; ok {
-		vertex.PageRank = val
-	} else {
-		vertex.PageRank = initialPageRank
+
+	for line := range line(filename.(string)) {
+		outgoing := strings.Split(line, " ")
+		outgoingTotal := len(outgoing) - 1
+		var vertex models.Vertex
+		if n, err := strconv.Atoi(outgoing[0]); err == nil {
+			vertex.Id = n
+		}
+		//ObtenerPageRank
+		if val, ok := pageRanks[vertex.Id]; ok {
+			vertex.PageRank = val
+		} else {
+			vertex.PageRank = initialPageRank
+		}
+		outGoingPageRank := vertex.PageRank / float64(outgoingTotal)
+		vertex.Edges = make([]models.Edge, outgoingTotal, outgoingTotal)
+		for i := range outgoing {
+			if i == 0 {
+				continue
+			}
+			if n, err := strconv.Atoi(outgoing[i]); err == nil {
+				fmt.Println(outGoingPageRank)
+				vertex.Edges[i-1] = models.Edge{Src_id: vertex.Id, Dest_id: n, PageRank: outGoingPageRank}
+			}
+		}
+		fmt.Println(vertex)
+		results[vertex.Id] = vertex
 	}
-	outgoingTotal := len(line.Out)
-	outGoingPageRank := vertex.PageRank / float64(outgoingTotal)
-	vertex.Edges = make([]models.Edge, outgoingTotal, outgoingTotal)
-	for i := range line.Out {
-		var edge = models.Edge{Src_id: vertex.Id, Dest_id: line.Out[i], PageRank: outGoingPageRank}
-		vertex.Edges = append(vertex.Edges, edge)
-	}
-	fmt.Println(vertex)
-	results[line.Id] = vertex
+
 	output <- results
 }
 
 func reducer(input chan interface{}, output chan interface{}) {
-	results := map[string]int{}
+	fmt.Println("Reducer")
+	results := map[int]models.Vertex{}
 
-	// for new_matches := range input {
-	// 	for key, value := range new_matches.(map[string]int) {
-	// 		previous_count, exists := results[key]
-
-	// 		if !exists {
-	// 			results[key] = value
-	// 		} else {
-	// 			results[key] = previous_count + value
-	// 		}
-	// 	}
-	// }
+	for new_matches := range input {
+		for key, value := range new_matches.(map[int]models.Vertex) {
+			previous_count, exists := results[key]
+			fmt.Println("Reducer loop")
+			fmt.Println(value)
+			if !exists {
+				results[key] = value
+			} else {
+				fmt.Println(previous_count)
+				results[key] = value
+			}
+		}
+	}
 
 	output <- results
 }
@@ -124,9 +163,9 @@ func reducer(input chan interface{}, output chan interface{}) {
 func main() {
 	//runtime.GOMAXPROCS(runtime.NumCPU())
 	fmt.Println("Procesando.....")
-	readBetha("./inputFile/testFile.txt")
+	//readBetha("./inputFiles/testFile.txt")
 	initialPageRank = 0.2
 	//input = readLines()
 	//nodes := NodeCollection{m: make(map[int]*models.Node)}
-	mapreduce.MapReduce(mapFunc, reducer, find_lines("./inputFile/testFile.txt"), wg)
+	mapreduce.MapReduce(mapFunc, reducer, find_files("./inputFiles"), 20)
 }
