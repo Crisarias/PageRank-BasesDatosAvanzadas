@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 
 	mapreduce "./mapReduce"
 	"./models"
@@ -17,7 +16,6 @@ var beta float64
 var initialPageRank float64
 var pageRanks map[int]float64
 var nodes map[int]float64
-var wg sync.WaitGroup
 
 func check(e error) {
 	if e != nil {
@@ -50,7 +48,6 @@ func find_lines(fileName string) chan models.Line {
 	output := make(chan models.Line)
 
 	go func() {
-		defer wg.Done()
 		file, err := os.Open("./inputFile/testFile.txt")
 		check(err)
 		defer file.Close()
@@ -58,6 +55,7 @@ func find_lines(fileName string) chan models.Line {
 		cont := 0
 		for scanner.Scan() {
 			if cont == 0 || cont == 1 {
+				cont++
 				continue
 			}
 			line := models.Line{Id: (cont - 1)}
@@ -66,16 +64,16 @@ func find_lines(fileName string) chan models.Line {
 			line.Out = make([]int, outgoingTotal, outgoingTotal)
 			for i := range outgoing {
 				if s, err := strconv.Atoi(outgoing[i]); err == nil {
-					line.Out = append(line.Out, s)
+					line.Out[i] = s
 				}
 				check(err)
 			}
 			output <- line
+			cont++
 		}
 		if err := scanner.Err(); err != nil {
 			check(err)
 		}
-		//defer wg.Wait()
 		close(output)
 	}()
 	return output
@@ -95,28 +93,30 @@ func mapFunc(line models.Line, output chan interface{}) {
 	outGoingPageRank := vertex.PageRank / float64(outgoingTotal)
 	vertex.Edges = make([]models.Edge, outgoingTotal, outgoingTotal)
 	for i := range line.Out {
-		var edge = models.Edge{Src_id: vertex.Id, Dest_id: line.Out[i], PageRank: outGoingPageRank}
-		vertex.Edges = append(vertex.Edges, edge)
+		vertex.Edges[i] = models.Edge{Src_id: vertex.Id, Dest_id: line.Out[i], PageRank: outGoingPageRank}
 	}
 	fmt.Println(vertex)
-	results[line.Id] = vertex
+	results[vertex.Id] = vertex
 	output <- results
 }
 
 func reducer(input chan interface{}, output chan interface{}) {
-	results := map[string]int{}
+	fmt.Println("Reducer")
+	results := map[int]models.Vertex{}
 
-	// for new_matches := range input {
-	// 	for key, value := range new_matches.(map[string]int) {
-	// 		previous_count, exists := results[key]
-
-	// 		if !exists {
-	// 			results[key] = value
-	// 		} else {
-	// 			results[key] = previous_count + value
-	// 		}
-	// 	}
-	// }
+	for new_matches := range input {
+		for key, value := range new_matches.(map[int]models.Vertex) {
+			previous_count, exists := results[key]
+			fmt.Println("Reducer loop")
+			fmt.Println(value)
+			if !exists {
+				results[key] = value
+			} else {
+				fmt.Println(previous_count)
+				results[key] = value
+			}
+		}
+	}
 
 	output <- results
 }
@@ -128,5 +128,5 @@ func main() {
 	initialPageRank = 0.2
 	//input = readLines()
 	//nodes := NodeCollection{m: make(map[int]*models.Node)}
-	mapreduce.MapReduce(mapFunc, reducer, find_lines("./inputFile/testFile.txt"), wg)
+	mapreduce.MapReduce(mapFunc, reducer, find_lines("./inputFile/testFile.txt"), 20)
 }
