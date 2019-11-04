@@ -4,10 +4,11 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 
+	mapreduce "./mapReduce"
 	"./models"
 )
 
@@ -15,11 +16,8 @@ import (
 var beta float64
 var initialPageRank float64
 var pageRanks map[int]float64
-
-type NodeCollection struct {
-	sync.RWMutex
-	m map[int]*models.Node
-}
+var nodes map[int]float64
+var wg sync.WaitGroup
 
 func check(e error) {
 	if e != nil {
@@ -28,143 +26,107 @@ func check(e error) {
 }
 
 func readBetha(filename string) {
-		file, err := os.Open(filename)
+	file, err := os.Open(filename)
+	check(err)
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	cont := 0
+	for scanner.Scan() {
+		if cont == 0 {
+			if s, err := strconv.ParseFloat(scanner.Text(), 64); err == nil {
+				beta = s
+				fmt.Println("Beta is ", beta)
+			}
+			check(err)
+			break
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		check(err)
+	}
+}
+
+func find_lines(fileName string) chan models.Line {
+	output := make(chan models.Line)
+
+	go func() {
+		defer wg.Done()
+		file, err := os.Open("./inputFile/testFile.txt")
 		check(err)
 		defer file.Close()
 		scanner := bufio.NewScanner(file)
 		cont := 0
 		for scanner.Scan() {
-			if cont == 0 {
-				if s, err := strconv.ParseFloat(scanner.Text(), 64); err == nil {
-					beta = s
-					fmt.Println("Beta is ", beta)
+			if cont == 0 || cont == 1 {
+				continue
+			}
+			line := models.Line{Id: (cont - 1)}
+			outgoing := strings.Split(scanner.Text(), " ")
+			outgoingTotal := len(outgoing)
+			line.Out = make([]int, outgoingTotal, outgoingTotal)
+			for i := range outgoing {
+				if s, err := strconv.Atoi(outgoing[i]); err == nil {
+					line.Out = append(line.Out, s)
 				}
 				check(err)
-				break;
 			}
+			output <- line
 		}
 		if err := scanner.Err(); err != nil {
 			check(err)
 		}
-}
-
-func mapStepPropagation(filename string) chan  models.Vertex {
-	output_vertex := make(chan models.Vertex)
-	go func() {
-		file, err := os.Open(filename)
-		check(err)
-		defer file.Close()
-		scanner := bufio.NewScanner(file)
-		cont := 0
-		for scanner.Scan() {
-			if cont == 0 || cont == 1 {
-				continue
-			}
-			vertex = models.Vertex{id:cont-1}
-			//ObtenerPageRank
-			if val, ok := pageRanks[vertex.id]; ok {
-				vertex.pageRank = val
-			}
-			else {
-				vertex.pageRank = initialPageRank
-			}			
-			outgoing := strings.Split(scanner.Text(), " ")
-			outgoingTotal := len(outgoing.count)
-			outGoingPageRank := vertex.pageRank / outgoingTotal
-			vertex.edges := make([]models.Edge, outgoingTotal, outgoingTotal) 
-			for _, var := range  outgoing{
-				if s, err := strconv.ParseInt(var, 64); err == nil {
-					edge = models.Edge{src_id:vertex.id, dest_id:s, pageRank: outGoingPageRank}
-					vertex.edges = append(vertex.edges, edge)
-				}
-				check(err)				
-			}
-			// Agregar la linea al canal add each json line to our enumeration channel
-			output_vertex <- vertex
-			fmt.Println(vertex)
-			cont++
-		}
-		if err := scanner.Err(); err != nil {
-			check(err)
-		}
+		//defer wg.Wait()
 		close(output)
 	}()
 	return output
 }
 
-
-func mapStepAggregation(filename string) chan  models.Vertex, chan models.Edge  {
-	output_vertex := make(chan models.Vertex)
-	output_edges := make(chan models.Edge)
-	go func() {
-		file, err := os.Open(filename)
-		check(err)
-		defer file.Close()
-		scanner := bufio.NewScanner(file)
-		cont := 0
-		for scanner.Scan() {
-			if cont == 0 || cont == 1 {
-				continue
-			}
-			vertex = models.Vertex{id:cont-1}
-			//ObtenerPageRank
-			if val, ok := pageRanks[vertex.id]; ok {
-				vertex.pageRank = val
-			}
-			else {
-				vertex.pageRank = initialPageRank
-			}
-			// Agregar la linea al canal add each json line to our enumeration channel
-			output_vertex <- vertex
-			fmt.Println(vertex)
-			outgoing := strings.Split(scanner.Text(), " ")
-			outgoingTotal := len(outgoing.count)
-			outGoingPageRank := vertex.pageRank / outgoingTotal
-			for _, var := range  outgoing{
-				if s, err := strconv.ParseInt(var, 64); err == nil {
-					edge = models.Edge{src_id:vertex.id, dest_id:s, pageRank: outGoingPageRank}
-					output_edges <- vertex
-					fmt.Println(edge)
-				}
-				check(err)				
-			}
-			cont++
-		}
-		if err := scanner.Err(); err != nil {
-			check(err)
-		}
-		close(output)
-	}()
-	return output
+func mapFunc(line models.Line, output chan interface{}) {
+	fmt.Println("Enter Mapper")
+	results := map[int]models.Vertex{}
+	var vertex = models.Vertex{Id: line.Id}
+	//ObtenerPageRank
+	if val, ok := pageRanks[vertex.Id]; ok {
+		vertex.PageRank = val
+	} else {
+		vertex.PageRank = initialPageRank
+	}
+	outgoingTotal := len(line.Out)
+	outGoingPageRank := vertex.PageRank / float64(outgoingTotal)
+	vertex.Edges = make([]models.Edge, outgoingTotal, outgoingTotal)
+	for i := range line.Out {
+		var edge = models.Edge{Src_id: vertex.Id, Dest_id: line.Out[i], PageRank: outGoingPageRank}
+		vertex.Edges = append(vertex.Edges, edge)
+	}
+	fmt.Println(vertex)
+	results[line.Id] = vertex
+	output <- results
 }
 
 func reducer(input chan interface{}, output chan interface{}) {
 	results := map[string]int{}
 
-	for new_matches := range input {
-		for key, value := range new_matches.(map[string]int) {
-			previous_count, exists := results[key]
+	// for new_matches := range input {
+	// 	for key, value := range new_matches.(map[string]int) {
+	// 		previous_count, exists := results[key]
 
-			if !exists {
-				results[key] = value
-			} else {
-				results[key] = previous_count + value
-			}
-		}
-	}
+	// 		if !exists {
+	// 			results[key] = value
+	// 		} else {
+	// 			results[key] = previous_count + value
+	// 		}
+	// 	}
+	// }
 
 	output <- results
 }
 
 func main() {
-	runtime.GOMAXPROCS(runtime.NumCPU())
+	//runtime.GOMAXPROCS(runtime.NumCPU())
 	fmt.Println("Procesando.....")
-	readBetha()
+	readBetha("./inputFile/testFile.txt")
 	initialPageRank = 0.2
-	input = readLines()
+	//input = readLines()
 	//nodes := NodeCollection{m: make(map[int]*models.Node)}
-}
-
-func mapToNode(index int, text string, nodes *NodeCollection) {
-
+	mapreduce.MapReduce(mapFunc, reducer, find_lines("./inputFile/testFile.txt"), wg)
 }
