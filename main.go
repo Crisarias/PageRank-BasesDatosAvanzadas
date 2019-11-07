@@ -13,9 +13,10 @@ import (
 
 /* Variables globales */
 var beta float64
+var nodesCount int
 var initialPageRank float64
 var pageRanks map[int]float64
-var nodes map[int]float64
+var inComingLinks map[int]*models.Incomings
 
 func check(e error) {
 	if e != nil {
@@ -34,6 +35,26 @@ func readBetha(filename string) {
 			if s, err := strconv.ParseFloat(scanner.Text(), 64); err == nil {
 				beta = s
 				fmt.Println("Beta is ", beta)
+			}
+			check(err)
+			break
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		check(err)
+	}
+}
+
+func readNodesCount(filename string) {
+	file, err := os.Open(filename)
+	check(err)
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	cont := 0
+	for scanner.Scan() {
+		if cont == 1 {
+			if s, err := strconv.Atoi(scanner.Text()); err == nil {
+				nodesCount = s
 			}
 			check(err)
 			break
@@ -105,15 +126,21 @@ func reducer(input chan interface{}, output chan interface{}) {
 	results := map[int]models.Vertex{}
 
 	for new_matches := range input {
-		for key, value := range new_matches.(map[int]models.Vertex) {
-			previous_count, exists := results[key]
+		for _, vertex := range new_matches.(map[int]models.Vertex) {
 			fmt.Println("Reducer loop")
-			fmt.Println(value)
-			if !exists {
-				results[key] = value
+			for _, edge := range vertex.Edges {
+				if _, ok := inComingLinks[edge.Dest_id]; ok {
+					inComingLinks[edge.Dest_id].SumPageRanks = inComingLinks[edge.Dest_id].SumPageRanks + edge.PageRank
+				} else {
+					inComingLinks[edge.Dest_id] = &models.Incomings{Id: edge.Dest_id}
+					inComingLinks[edge.Dest_id].SumPageRanks = inComingLinks[edge.Dest_id].SumPageRanks + edge.PageRank
+				}
+			}
+			if _, ok := inComingLinks[vertex.Id]; ok {
+				inComingLinks[vertex.Id].Outgoings = vertex.Edges
 			} else {
-				fmt.Println(previous_count)
-				results[key] = value
+				inComingLinks[vertex.Id] = &models.Incomings{Id: vertex.Id}
+				inComingLinks[vertex.Id].Outgoings = vertex.Edges
 			}
 		}
 	}
@@ -125,8 +152,15 @@ func main() {
 	//runtime.GOMAXPROCS(runtime.NumCPU())
 	fmt.Println("Procesando.....")
 	readBetha("./inputFile/testFile.txt")
-	initialPageRank = 0.2
+	readNodesCount("./inputFile/testFile.txt")
+	initialPageRank = 1
+	inComingLinks = make(map[int]*models.Incomings, nodesCount)
+	pageRanks = make(map[int]float64, nodesCount)
 	//input = readLines()
 	//nodes := NodeCollection{m: make(map[int]*models.Node)}
 	mapreduce.MapReduce(mapFunc, reducer, find_lines("./inputFile/testFile.txt"), 20)
+	for _, value := range inComingLinks {
+		fmt.Println(value)
+	}
+
 }
