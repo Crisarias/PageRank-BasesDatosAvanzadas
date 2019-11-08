@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	mapreduce "./mapReduce"
 	"./models"
@@ -29,16 +30,13 @@ func readBetha(filename string) {
 	check(err)
 	defer file.Close()
 	scanner := bufio.NewScanner(file)
-	cont := 0
 	for scanner.Scan() {
-		if cont == 0 {
-			if s, err := strconv.ParseFloat(scanner.Text(), 64); err == nil {
-				beta = s
-				fmt.Println("Beta is ", beta)
-			}
-			check(err)
-			break
+		if s, err := strconv.ParseFloat(scanner.Text(), 64); err == nil {
+			beta = s
+			fmt.Println("Beta is ", beta)
 		}
+		check(err)
+		break
 	}
 	if err := scanner.Err(); err != nil {
 		check(err)
@@ -59,6 +57,7 @@ func readNodesCount(filename string) {
 			check(err)
 			break
 		}
+		cont++
 	}
 	if err := scanner.Err(); err != nil {
 		check(err)
@@ -144,7 +143,6 @@ func reducer(input chan interface{}, output chan interface{}) {
 			}
 		}
 	}
-
 	output <- results
 }
 
@@ -158,7 +156,10 @@ func main() {
 	pageRanks = make(map[int]float64, nodesCount)
 	//input = readLines()
 	//nodes := NodeCollection{m: make(map[int]*models.Node)}
-	mapreduce.MapReduce(mapFunc, reducer, find_lines("./inputFile/testFile.txt"), 20)
+	var wg sync.WaitGroup
+	//wg.Add(nodesCount)
+	mapreduce.MapReduce(mapFunc, reducer, find_lines("./inputFile/testFile.txt"), &wg, 20)
+	wg.Wait() //Wait all reducers to finish in order to have inComingLinks with all the information
 	for _, value := range inComingLinks {
 		fmt.Println(value)
 	}
