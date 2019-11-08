@@ -53,6 +53,7 @@ func readNodesCount(filename string) {
 		if cont == 1 {
 			if s, err := strconv.Atoi(scanner.Text()); err == nil {
 				nodesCount = s
+				fmt.Println("Node count is ", beta)
 			}
 			check(err)
 			break
@@ -100,7 +101,6 @@ func find_lines(fileName string) chan models.Line {
 }
 
 func mapFunc(line models.Line, output chan interface{}) {
-	fmt.Println("Enter Mapper")
 	results := map[int]models.Vertex{}
 	var vertex = models.Vertex{Id: line.Id}
 	//ObtenerPageRank
@@ -115,18 +115,21 @@ func mapFunc(line models.Line, output chan interface{}) {
 	for i := range line.Out {
 		vertex.Edges[i] = models.Edge{Src_id: vertex.Id, Dest_id: line.Out[i], PageRank: outGoingPageRank}
 	}
-	fmt.Println(vertex)
+	results[vertex.Id] = vertex
+	output <- results
+}
+
+func mapFuncAggr(vertex models.Incomings, output chan interface{}) {
+	results := map[int]models.Incomings{}
 	results[vertex.Id] = vertex
 	output <- results
 }
 
 func reducer(input chan interface{}, output chan interface{}) {
-	fmt.Println("Reducer")
 	results := map[int]models.Vertex{}
 
 	for new_matches := range input {
 		for _, vertex := range new_matches.(map[int]models.Vertex) {
-			fmt.Println("Reducer loop")
 			for _, edge := range vertex.Edges {
 				if _, ok := inComingLinks[edge.Dest_id]; ok {
 					inComingLinks[edge.Dest_id].SumPageRanks = inComingLinks[edge.Dest_id].SumPageRanks + edge.PageRank
@@ -146,6 +149,17 @@ func reducer(input chan interface{}, output chan interface{}) {
 	output <- results
 }
 
+func reducerAggr(input chan interface{}, output chan interface{}) {
+	results := map[int]models.Incomings{}
+
+	for new_matches := range input {
+		for _, vertex := range new_matches.(map[int]models.Incomings) {
+			pageRanks[vertex.Id] = vertex.SumPageRanks // Change for Formula
+		}
+	}
+	output <- results
+}
+
 func main() {
 	//runtime.GOMAXPROCS(runtime.NumCPU())
 	fmt.Println("Procesando.....")
@@ -157,9 +171,10 @@ func main() {
 	//input = readLines()
 	//nodes := NodeCollection{m: make(map[int]*models.Node)}
 	var wg sync.WaitGroup
-	//wg.Add(nodesCount)
+	fmt.Println("Calculating Edges.....")
 	mapreduce.MapReduce(mapFunc, reducer, find_lines("./inputFile/testFile.txt"), &wg, 20)
 	wg.Wait() //Wait all reducers to finish in order to have inComingLinks with all the information
+	fmt.Println("Calculating Page Ranks.....")
 	for _, value := range inComingLinks {
 		fmt.Println(value)
 	}
