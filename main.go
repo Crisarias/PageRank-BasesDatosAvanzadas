@@ -100,6 +100,18 @@ func find_lines(fileName string) chan models.Line {
 	return output
 }
 
+func aggregation_input() chan models.Incomings {
+	output := make(chan models.Incomings)
+
+	go func() {
+		for _, vertex := range inComingLinks {
+			output <- *vertex
+		}
+		close(output)
+	}()
+	return output
+}
+
 func mapFunc(line models.Line, output chan interface{}) {
 	results := map[int]models.Vertex{}
 	var vertex = models.Vertex{Id: line.Id}
@@ -154,7 +166,8 @@ func reducerAggr(input chan interface{}, output chan interface{}) {
 
 	for new_matches := range input {
 		for _, vertex := range new_matches.(map[int]models.Incomings) {
-			pageRanks[vertex.Id] = vertex.SumPageRanks // Change for Formula
+			var pageRank = vertex.SumPageRanks // Change for Formula
+			pageRanks[vertex.Id] = pageRank
 		}
 	}
 	output <- results
@@ -174,9 +187,13 @@ func main() {
 	fmt.Println("Calculating Edges.....")
 	mapreduce.MapReduce(mapFunc, reducer, find_lines("./inputFile/testFile.txt"), &wg, 20)
 	wg.Wait() //Wait all reducers to finish in order to have inComingLinks with all the information
-	fmt.Println("Calculating Page Ranks.....")
 	for _, value := range inComingLinks {
 		fmt.Println(value)
 	}
+	var wg2 sync.WaitGroup
+	fmt.Println("Calculating Page Ranks.....")
+	mapreduce.MapReduceAggregation(mapFuncAggr, reducerAggr, aggregation_input(), &wg2, 20)
+	wg.Wait()
+	fmt.Println(pageRanks)
 
 }
