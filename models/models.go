@@ -12,6 +12,12 @@ type Edge struct {
 	PageRank float64
 }
 
+type Incomings struct {
+	Id           int
+	SumPageRanks float64
+	Outgoings    []Edge
+}
+
 type Line struct {
 	Id  int
 	Out []int
