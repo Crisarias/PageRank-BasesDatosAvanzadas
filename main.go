@@ -166,7 +166,7 @@ func reducerAggr(input chan interface{}, output chan interface{}) {
 
 	for new_matches := range input {
 		for _, vertex := range new_matches.(map[int]models.Incomings) {
-			var pageRank = vertex.SumPageRanks // Change for Formula
+			var pageRank = ((1.0 - beta) / float64(nodesCount)) + (beta * vertex.SumPageRanks) // Change for Formula
 			pageRanks[vertex.Id] = pageRank
 		}
 	}
@@ -175,7 +175,7 @@ func reducerAggr(input chan interface{}, output chan interface{}) {
 
 func main() {
 	//runtime.GOMAXPROCS(runtime.NumCPU())
-	fmt.Println("Procesando.....")
+	fmt.Println("Processing....")
 	readBetha("./inputFile/testFile.txt")
 	readNodesCount("./inputFile/testFile.txt")
 	initialPageRank = 1
@@ -185,15 +185,19 @@ func main() {
 	//nodes := NodeCollection{m: make(map[int]*models.Node)}
 	var wg sync.WaitGroup
 	fmt.Println("Calculating Edges.....")
+	// Get all page ranks for edges
 	mapreduce.MapReduce(mapFunc, reducer, find_lines("./inputFile/testFile.txt"), &wg, 20)
-	wg.Wait() //Wait all reducers to finish in order to have inComingLinks with all the information
+	wg.Wait() //Wait all reducers to finish in order to have all the edges with all the information
 	for _, value := range inComingLinks {
 		fmt.Println(value)
 	}
 	var wg2 sync.WaitGroup
 	fmt.Println("Calculating Page Ranks.....")
+	//Calculate all page ranks for vertex based on sum of the page ranks of the incoming links edges
 	mapreduce.MapReduceAggregation(mapFuncAggr, reducerAggr, aggregation_input(), &wg2, 20)
-	wg.Wait()
+	//Wait all reducers to finish in order to have all the vertex with all the information
+	wg2.Wait()
+	//Validate threshold
 	fmt.Println(pageRanks)
 
 }
