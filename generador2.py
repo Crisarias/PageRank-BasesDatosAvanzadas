@@ -8,8 +8,8 @@ CantNodos = int(input("Cantidad de nodos "))
 file = open("./filename.txt", "w")
 #CantNodos = random.randrange(100)
 print(CantNodos)
-file.write(str(CantNodos))
-file.write(os.linesep)
+file.write(str(CantNodos)+"\n" )
+#file.write(os.linesep)
 #file.write(str(CantNodos)+os.linesep)
 for lineas in range(CantNodos):
     cantvertex =  random.randrange(CantNodos)
@@ -26,6 +26,6 @@ for lineas in range(CantNodos):
             print(linkto,end = '')
             print(" ",end = '')
     print("")
-    file.write(os.linesep)
+    file.write("\n")
 
 file.close()
