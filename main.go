@@ -60,10 +60,6 @@ func find_lines(fileName string) chan models.Line {
 			if cont > 0 {
 				line := models.Line{Id: (cont)}
 				outgoing := strings.Split(scanner.Text(), " ")
-				// outgoingTotal := 0
-				// if outgoing[0] != " " {
-				// 	outgoingTotal = len(outgoing)
-				// }
 				outgoingTotal := len(outgoing)
 				line.Out = make([]int, outgoingTotal, outgoingTotal)
 				outLinks[cont] = make([]int, outgoingTotal, outgoingTotal)
@@ -94,15 +90,12 @@ func aggregation_input() chan models.InLinks {
 			if _, ok := inLinks[i]; ok {
 				output <- *inLinks[i]
 			} else {
-				fmt.Println("No inlinks")
+				//If the node has no inlinks pass to the reducer with a sumPageRanks of 0
 				inLinks[i] = &models.InLinks{Id: i}
 				inLinks[i].SumPageRanks = 0
 				output <- *inLinks[i]
 			}
 		}
-		// for _, vertex := range inLinks {
-		// 	output <- *vertex
-		// }
 		close(output)
 	}()
 	return output
@@ -111,7 +104,7 @@ func aggregation_input() chan models.InLinks {
 func mapFunc(line models.Line, output chan interface{}) {
 	results := map[int]models.Vertex{}
 	var vertex = models.Vertex{Id: line.Id}
-	//ObtenerPageRank
+	//Get PageRank if not exist assign initial
 	if val, ok := pageRanks[vertex.Id]; ok {
 		vertex.PageRank = val
 	} else {
@@ -125,7 +118,6 @@ func mapFunc(line models.Line, output chan interface{}) {
 		index := 0
 		for i := 1; i <= nodesCount; i++ {
 			if (i) != vertex.Id {
-				fmt.Println("Added")
 				vertex.Edges[index] = models.Edge{Src_id: vertex.Id, Dest_id: i, PageRank: outGoingPageRank}
 				index++
 			}
