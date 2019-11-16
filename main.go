@@ -18,6 +18,7 @@ var beta float64
 var nodesCount int
 var initialPageRank float64
 var pageRanks map[int]float64
+var pageRanksToAdd float64
 var oldPageRanks map[int]float64
 var inLinks map[int]*models.InLinks
 var outLinks map[int][]int
@@ -60,6 +61,10 @@ func find_lines(fileName string) chan models.Line {
 			if cont > 0 {
 				line := models.Line{Id: (cont)}
 				outgoing := strings.Split(scanner.Text(), " ")
+				// outgoingTotal := 0
+				// if outgoing[0] != " " {
+				// 	outgoingTotal = len(outgoing)
+				// }
 				outgoingTotal := len(outgoing)
 				line.Out = make([]int, outgoingTotal, outgoingTotal)
 				outLinks[cont] = make([]int, outgoingTotal, outgoingTotal)
@@ -84,11 +89,21 @@ func find_lines(fileName string) chan models.Line {
 
 func aggregation_input() chan models.InLinks {
 	output := make(chan models.InLinks)
-
+	cont := nodesCount
 	go func() {
-		for _, vertex := range inLinks {
-			output <- *vertex
+		for i := 1; i <= cont; i++ {
+			if _, ok := inLinks[i]; ok {
+				output <- *inLinks[i]
+			} else {
+				fmt.Println("No inlinks")
+				inLinks[i] = &models.InLinks{Id: i}
+				inLinks[i].SumPageRanks = 0
+				output <- *inLinks[i]
+			}
 		}
+		// for _, vertex := range inLinks {
+		// 	output <- *vertex
+		// }
 		close(output)
 	}()
 	return output
@@ -101,14 +116,31 @@ func mapFunc(line models.Line, output chan interface{}) {
 	if val, ok := pageRanks[vertex.Id]; ok {
 		vertex.PageRank = val
 	} else {
+		pageRanks[vertex.Id] = initialPageRank
 		vertex.PageRank = initialPageRank
 	}
-	outgoingTotal := len(line.Out)
-	outGoingPageRank := vertex.PageRank / float64(outgoingTotal)
-	vertex.Edges = make([]models.Edge, outgoingTotal, outgoingTotal)
-	for i := range line.Out {
-		vertex.Edges[i] = models.Edge{Src_id: vertex.Id, Dest_id: line.Out[i], PageRank: outGoingPageRank}
+	//If have no outlinks has to link to all
+	if line.Out[0] == 0 {
+		pageRanksToAdd = vertex.PageRank / float64(nodesCount-1)
+		vertex.Edges = make([]models.Edge, nodesCount-1, nodesCount-1)
+		index := 0
+		for i := 1; i <= nodesCount; i++ {
+			if (i) != vertex.Id {
+				fmt.Println("Added")
+				vertex.Edges[index] = models.Edge{Src_id: vertex.Id, Dest_id: i, PageRank: pageRanksToAdd}
+				index++
+			}
+		}
+		fmt.Println("To add", pageRanksToAdd)
+	} else {
+		outgoingTotal := len(line.Out)
+		outGoingPageRank := vertex.PageRank / float64(outgoingTotal)
+		vertex.Edges = make([]models.Edge, outgoingTotal, outgoingTotal)
+		for i := range line.Out {
+			vertex.Edges[i] = models.Edge{Src_id: vertex.Id, Dest_id: line.Out[i], PageRank: outGoingPageRank}
+		}
 	}
+
 	results[vertex.Id] = vertex
 	output <- results
 }
@@ -132,12 +164,6 @@ func reducer(input chan interface{}, output chan interface{}) {
 					inLinks[edge.Dest_id].SumPageRanks = inLinks[edge.Dest_id].SumPageRanks + edge.PageRank
 				}
 			}
-			// if vertex.Edges != nil && len(vertex.Edges) > 0 {
-			// 	outLinks[vertex.Id] = make([]int, 0, len(vertex.Edges))
-			// 	for i, value := range vertex.Edges {
-			// 		outLinks[vertex.Id][i] = value.Dest_id
-			// 	}
-			// }
 		}
 	}
 	output <- results
@@ -145,10 +171,10 @@ func reducer(input chan interface{}, output chan interface{}) {
 
 func reducerAggregation(input chan interface{}, output chan interface{}) {
 	results := map[int]models.InLinks{}
-
 	for new_matches := range input {
+		fmt.Println("Enter aggregation")
 		for _, vertex := range new_matches.(map[int]models.InLinks) {
-			var pageRank = ((1.0 - beta) / float64(nodesCount)) + (beta * vertex.SumPageRanks) // Change for Formula
+			var pageRank = ((1.0 - beta) / float64(nodesCount)) + (beta * (vertex.SumPageRanks + pageRanksToAdd))
 			oldPageRanks[vertex.Id] = pageRanks[vertex.Id]
 			pageRanks[vertex.Id] = pageRank
 		}
@@ -159,7 +185,7 @@ func reducerAggregation(input chan interface{}, output chan interface{}) {
 func validate() {
 	convergence = true
 	for index := 0; index < nodesCount; index++ {
-		if math.Abs(pageRanks[index]-oldPageRanks[index]) > 0.0001 {
+		if math.Abs(pageRanks[index]-oldPageRanks[index]) != 0 {
 			convergence = false
 			break
 		}
@@ -200,6 +226,7 @@ func main() {
 	for !convergence && cont < 1000 {
 		inLinks = make(map[int]*models.InLinks, nodesCount)
 		oldPageRanks = make(map[int]float64, nodesCount)
+		pageRanksToAdd = 0
 		var wg sync.WaitGroup
 		fmt.Println("Calculating Edges.....")
 		// Get all page ranks for edges
@@ -217,9 +244,12 @@ func main() {
 		fmt.Println(pageRanks)
 		cont++
 	}
+	totalsum := 0.0
 	fmt.Println("Final vector with outgoings")
 	for i := 1; i <= nodesCount; i++ {
+		totalsum += pageRanks[i]
 		fmt.Println("Edge ", i, ", ", "Page Rank: ", pageRanks[i], ", Outlinks:", outLinks[i])
 	}
+	fmt.Println("Final Total", totalsum)
 
 }
