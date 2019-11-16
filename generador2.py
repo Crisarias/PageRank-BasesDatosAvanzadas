@@ -1,22 +1,28 @@
 import os
 
 import random
+
+
+CantNodos = int(input("Cantidad de nodos "))
+
 file = open("./filename.txt", "w")
-CantNodos = random.randrange(100)
+#CantNodos = random.randrange(100)
 print(CantNodos)
-file.write(str(CantNodos)+os.linesep)
+#file.write(str(CantNodos)+os.linesep)
 for lineas in range(CantNodos):
-    vertex =  random.randrange(CantNodos)
+    cantvertex =  random.randrange(CantNodos)
     
     print(lineas,end = '')
     print(" ",end = '')
     file.write(str(lineas) + " ")
-    
-    for x in range(vertex):
+    lista = []
+    for x in range(cantvertex):
         linkto= random.randrange(CantNodos)
-        file.write(str(linkto)+ " ")
-        print(linkto,end = '')
-        print(" ",end = '')
+        if linkto  not in lista:
+            lista.append(linkto)
+            file.write(str(linkto)+ " ")
+            print(linkto,end = '')
+            print(" ",end = '')
     print("")
     file.write(os.linesep)
 
