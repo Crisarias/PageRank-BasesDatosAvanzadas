@@ -38,9 +38,9 @@ func MapReduce(mapper func(models.Line, chan interface{}),
 	return <-reduce_output
 }
 
-func MapReduceAggregation(mapper func(models.Incomings, chan interface{}),
+func MapReduceAggregation(mapper func(models.InLinks, chan interface{}),
 	reducer func(chan interface{}, chan interface{}),
-	input chan models.Incomings, wg *sync.WaitGroup, pool_size int) interface{} {
+	input chan models.InLinks, wg *sync.WaitGroup, pool_size int) interface{} {
 
 	reduce_input := make(chan interface{})
 	reduce_output := make(chan interface{})

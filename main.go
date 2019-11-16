@@ -19,7 +19,8 @@ var nodesCount int
 var initialPageRank float64
 var pageRanks map[int]float64
 var oldPageRanks map[int]float64
-var inComingLinks map[int]*models.Incomings
+var inLinks map[int]*models.InLinks
+var outLinks map[int][]int
 var convergence bool
 
 func check(e error) {
@@ -28,40 +29,18 @@ func check(e error) {
 	}
 }
 
-func readBetha(filename string) {
-	file, err := os.Open(filename)
-	check(err)
-	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		if s, err := strconv.ParseFloat(scanner.Text(), 64); err == nil {
-			beta = s
-			fmt.Println("Beta is ", beta)
-		}
-		check(err)
-		break
-	}
-	if err := scanner.Err(); err != nil {
-		check(err)
-	}
-}
-
 func readNodesCount(filename string) {
 	file, err := os.Open(filename)
 	check(err)
 	defer file.Close()
 	scanner := bufio.NewScanner(file)
-	cont := 0
 	for scanner.Scan() {
-		if cont == 1 {
-			if s, err := strconv.Atoi(scanner.Text()); err == nil {
-				nodesCount = s
-				fmt.Println("Node count is ", beta)
-			}
-			check(err)
-			break
+		if s, err := strconv.Atoi(scanner.Text()); err == nil {
+			nodesCount = s
+			fmt.Println("Node count is ", nodesCount)
 		}
-		cont++
+		check(err)
+		break
 	}
 	if err := scanner.Err(); err != nil {
 		check(err)
@@ -78,21 +57,21 @@ func find_lines(fileName string) chan models.Line {
 		scanner := bufio.NewScanner(file)
 		cont := 0
 		for scanner.Scan() {
-			if cont == 0 || cont == 1 {
-				cont++
-				continue
-			}
-			line := models.Line{Id: (cont - 1)}
-			outgoing := strings.Split(scanner.Text(), " ")
-			outgoingTotal := len(outgoing)
-			line.Out = make([]int, outgoingTotal, outgoingTotal)
-			for i := range outgoing {
-				if s, err := strconv.Atoi(outgoing[i]); err == nil {
-					line.Out[i] = s
+			if cont > 0 {
+				line := models.Line{Id: (cont)}
+				outgoing := strings.Split(scanner.Text(), " ")
+				outgoingTotal := len(outgoing)
+				line.Out = make([]int, outgoingTotal, outgoingTotal)
+				outLinks[cont] = make([]int, outgoingTotal, outgoingTotal)
+				for i := range outgoing {
+					if s, err := strconv.Atoi(outgoing[i]); err == nil {
+						line.Out[i] = s
+						outLinks[cont][i] = s
+					}
+					check(err)
 				}
-				check(err)
+				output <- line
 			}
-			output <- line
 			cont++
 		}
 		if err := scanner.Err(); err != nil {
@@ -103,11 +82,11 @@ func find_lines(fileName string) chan models.Line {
 	return output
 }
 
-func aggregation_input() chan models.Incomings {
-	output := make(chan models.Incomings)
+func aggregation_input() chan models.InLinks {
+	output := make(chan models.InLinks)
 
 	go func() {
-		for _, vertex := range inComingLinks {
+		for _, vertex := range inLinks {
 			output <- *vertex
 		}
 		close(output)
@@ -134,8 +113,8 @@ func mapFunc(line models.Line, output chan interface{}) {
 	output <- results
 }
 
-func mapFuncAggr(vertex models.Incomings, output chan interface{}) {
-	results := map[int]models.Incomings{}
+func mapFuncAggregation(vertex models.InLinks, output chan interface{}) {
+	results := map[int]models.InLinks{}
 	results[vertex.Id] = vertex
 	output <- results
 }
@@ -146,29 +125,29 @@ func reducer(input chan interface{}, output chan interface{}) {
 	for new_matches := range input {
 		for _, vertex := range new_matches.(map[int]models.Vertex) {
 			for _, edge := range vertex.Edges {
-				if _, ok := inComingLinks[edge.Dest_id]; ok {
-					inComingLinks[edge.Dest_id].SumPageRanks = inComingLinks[edge.Dest_id].SumPageRanks + edge.PageRank
+				if _, ok := inLinks[edge.Dest_id]; ok {
+					inLinks[edge.Dest_id].SumPageRanks = inLinks[edge.Dest_id].SumPageRanks + edge.PageRank
 				} else {
-					inComingLinks[edge.Dest_id] = &models.Incomings{Id: edge.Dest_id}
-					inComingLinks[edge.Dest_id].SumPageRanks = inComingLinks[edge.Dest_id].SumPageRanks + edge.PageRank
+					inLinks[edge.Dest_id] = &models.InLinks{Id: edge.Dest_id}
+					inLinks[edge.Dest_id].SumPageRanks = inLinks[edge.Dest_id].SumPageRanks + edge.PageRank
 				}
 			}
-			if _, ok := inComingLinks[vertex.Id]; ok {
-				inComingLinks[vertex.Id].Outgoings = vertex.Edges
-			} else {
-				inComingLinks[vertex.Id] = &models.Incomings{Id: vertex.Id}
-				inComingLinks[vertex.Id].Outgoings = vertex.Edges
-			}
+			// if vertex.Edges != nil && len(vertex.Edges) > 0 {
+			// 	outLinks[vertex.Id] = make([]int, 0, len(vertex.Edges))
+			// 	for i, value := range vertex.Edges {
+			// 		outLinks[vertex.Id][i] = value.Dest_id
+			// 	}
+			// }
 		}
 	}
 	output <- results
 }
 
-func reducerAggr(input chan interface{}, output chan interface{}) {
-	results := map[int]models.Incomings{}
+func reducerAggregation(input chan interface{}, output chan interface{}) {
+	results := map[int]models.InLinks{}
 
 	for new_matches := range input {
-		for _, vertex := range new_matches.(map[int]models.Incomings) {
+		for _, vertex := range new_matches.(map[int]models.InLinks) {
 			var pageRank = ((1.0 - beta) / float64(nodesCount)) + (beta * vertex.SumPageRanks) // Change for Formula
 			oldPageRanks[vertex.Id] = pageRanks[vertex.Id]
 			pageRanks[vertex.Id] = pageRank
@@ -185,34 +164,51 @@ func validate() {
 			break
 		}
 	}
-
 }
 
 func main() {
+	beta = -1
+	for beta == -1 {
+		fmt.Println("Enter a value for betha")
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			if s, err := strconv.ParseFloat(scanner.Text(), 64); err == nil {
+				if s <= 0 || s >= 1 {
+					fmt.Println("Betha value must higher than 0 and lower than 1")
+				} else {
+					beta = s
+					fmt.Println("Betha from terminal is ", beta)
+					break
+				}
+			} else {
+				fmt.Println("Please a valid float64 number")
+			}
+		}
+		if scanner.Err() != nil {
+			fmt.Println("There was an error reading from the terminal")
+		}
+	}
 	fmt.Println("Processing....")
-	readBetha("./inputFile/testFile.txt")
 	readNodesCount("./inputFile/testFile.txt")
 	initialPageRank = 1
 	pageRanks = make(map[int]float64, nodesCount)
+	outLinks = make(map[int][]int, nodesCount)
 	convergence = false
 	//Start iteration cycle
 	cont := 0
 	//Iterate until convergence or iteration 20
 	for !convergence && cont < 1000 {
-		inComingLinks = make(map[int]*models.Incomings, nodesCount)
+		inLinks = make(map[int]*models.InLinks, nodesCount)
 		oldPageRanks = make(map[int]float64, nodesCount)
 		var wg sync.WaitGroup
 		fmt.Println("Calculating Edges.....")
 		// Get all page ranks for edges
 		mapreduce.MapReduce(mapFunc, reducer, find_lines("./inputFile/testFile.txt"), &wg, 20)
 		wg.Wait() //Wait all reducers to finish in order to have all the edges with all the information
-		for _, value := range inComingLinks {
-			fmt.Println(value)
-		}
 		var wg2 sync.WaitGroup
 		fmt.Println("Calculating Page Ranks.....")
 		//Calculate all page ranks for vertex based on sum of the page ranks of the incoming links edges
-		mapreduce.MapReduceAggregation(mapFuncAggr, reducerAggr, aggregation_input(), &wg2, 20)
+		mapreduce.MapReduceAggregation(mapFuncAggregation, reducerAggregation, aggregation_input(), &wg2, 20)
 		//Wait all reducers to finish in order to have all the vertex with all the information
 		wg2.Wait()
 		//Validate threshold
@@ -220,6 +216,10 @@ func main() {
 		fmt.Println("Iteration", cont)
 		fmt.Println(pageRanks)
 		cont++
+	}
+	fmt.Println("Final vector with outgoings")
+	for i := 1; i <= nodesCount; i++ {
+		fmt.Println("Edge ", i, ", ", "Page Rank: ", pageRanks[i], ", Outlinks:", outLinks[i])
 	}
 
 }
