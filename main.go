@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -202,6 +203,8 @@ func endProcess(iteration int) {
 }
 
 func main() {
+	fmt.Println("Running on ", runtime.NumCPU(), " cores")
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	beta = -1
 	for beta == -1 {
 		fmt.Println("Enter a value for betha")
