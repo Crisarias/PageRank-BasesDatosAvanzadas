@@ -12,7 +12,7 @@ file.write(str(CantNodos)+"\n")
 #file.write(os.linesep)
 #file.write(str(CantNodos)+os.linesep)
 for lineas in range(CantNodos):
-    cantvertex =  random.randrange(CantNodos) - 1 
+    cantvertex =  100
     
  #   print(lineas,end = '')
     print(lineas, end='')

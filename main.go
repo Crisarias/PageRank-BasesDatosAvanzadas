@@ -17,14 +17,17 @@ import (
 var beta float64
 var nodesCount int
 var initialPageRank float64
-var pageRanks map[int]float64
+var pageRanks sync.Map
 var oldPageRanks map[int]float64
 var inLinks map[int]*models.InLinks
 var outLinks map[int][]int
 var convergence bool
 
+const ResultsTxT = "results\results.txt"
+
 func check(e error) {
 	if e != nil {
+		fmt.Println("Unexpected error: %s", e)
 		panic(e)
 	}
 }
@@ -105,10 +108,10 @@ func mapFunc(line models.Line, output chan interface{}) {
 	results := map[int]models.Vertex{}
 	var vertex = models.Vertex{Id: line.Id}
 	//Get PageRank if not exist assign initial
-	if val, ok := pageRanks[vertex.Id]; ok {
-		vertex.PageRank = val
+	if val, ok := pageRanks.Load(vertex.Id); ok {
+		vertex.PageRank = val.(float64)
 	} else {
-		pageRanks[vertex.Id] = initialPageRank
+		pageRanks.Store(vertex.Id, initialPageRank)
 		vertex.PageRank = initialPageRank
 	}
 	//If have no outlinks has to link to all
@@ -162,11 +165,11 @@ func reducer(input chan interface{}, output chan interface{}) {
 func reducerAggregation(input chan interface{}, output chan interface{}) {
 	results := map[int]models.InLinks{}
 	for new_matches := range input {
-		fmt.Println("Enter aggregation")
 		for _, vertex := range new_matches.(map[int]models.InLinks) {
 			var pageRank = ((1.0 - beta) / float64(nodesCount)) + (beta * (vertex.SumPageRanks))
-			oldPageRanks[vertex.Id] = pageRanks[vertex.Id]
-			pageRanks[vertex.Id] = pageRank
+			old, _ := pageRanks.Load(vertex.Id)
+			oldPageRanks[vertex.Id] = old.(float64)
+			pageRanks.Store(vertex.Id, pageRank)
 		}
 	}
 	output <- results
@@ -175,11 +178,32 @@ func reducerAggregation(input chan interface{}, output chan interface{}) {
 func validate() {
 	convergence = true
 	for index := 0; index < nodesCount; index++ {
-		if math.Abs(pageRanks[index]-oldPageRanks[index]) != 0 {
+		pagerank, ok := pageRanks.Load(index)
+		if ok && math.Abs(pagerank.(float64)-oldPageRanks[index]) > 0.000001 {
 			convergence = false
 			break
 		}
 	}
+}
+
+//Write results files
+func endProcess() {
+	totalsum := 0.0
+	fmt.Println("Writing final pageRanks")
+	os.Remove("Results.txt")
+	file, err := os.OpenFile("Results.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	check(err)
+	datawriter := bufio.NewWriter(file)
+	for i := 1; i <= nodesCount; i++ {
+		pagerank, _ := pageRanks.Load(i)
+		totalsum += pagerank.(float64)
+		_, _ = datawriter.WriteString(strconv.FormatFloat(pagerank.(float64), 'f', 6, 64) + "\n")
+		//fmt.Println("Edge ", i, ", ", "Page Rank: ", pagerank.(float64), ", Outlinks:", outLinks[i])
+		fmt.Println("Edge ", i, ", ", "Page Rank: ", pagerank.(float64))
+	}
+	datawriter.Flush()
+	file.Close()
+	fmt.Println("Final Total", totalsum)
 }
 
 func main() {
@@ -207,7 +231,6 @@ func main() {
 	fmt.Println("Processing....")
 	readNodesCount("./inputFile/testFile.txt")
 	initialPageRank = 1
-	pageRanks = make(map[int]float64, nodesCount)
 	outLinks = make(map[int][]int, nodesCount)
 	convergence = false
 	//Start iteration cycle
@@ -219,26 +242,18 @@ func main() {
 		var wg sync.WaitGroup
 		fmt.Println("Calculating Edges.....")
 		// Get all page ranks for edges
-		mapreduce.MapReduce(mapFunc, reducer, find_lines("./inputFile/testFile.txt"), &wg, 20)
+		mapreduce.MapReduce(mapFunc, reducer, find_lines("./inputFile/testFile.txt"), &wg, nodesCount)
 		wg.Wait() //Wait all reducers to finish in order to have all the edges with all the information
 		var wg2 sync.WaitGroup
 		fmt.Println("Calculating Page Ranks.....")
 		//Calculate all page ranks for vertex based on sum of the page ranks of the incoming links edges
-		mapreduce.MapReduceAggregation(mapFuncAggregation, reducerAggregation, aggregation_input(), &wg2, 20)
+		mapreduce.MapReduceAggregation(mapFuncAggregation, reducerAggregation, aggregation_input(), &wg2, nodesCount)
 		//Wait all reducers to finish in order to have all the vertex with all the information
 		wg2.Wait()
 		//Validate threshold
 		validate()
-		fmt.Println("Iteration", cont)
-		fmt.Println(pageRanks)
+		fmt.Println("Iteration", cont, "Completed")
 		cont++
 	}
-	totalsum := 0.0
-	fmt.Println("Final vector with outgoings")
-	for i := 1; i <= nodesCount; i++ {
-		totalsum += pageRanks[i]
-		fmt.Println("Edge ", i, ", ", "Page Rank: ", pageRanks[i], ", Outlinks:", outLinks[i])
-	}
-	fmt.Println("Final Total", totalsum)
-
+	endProcess()
 }
