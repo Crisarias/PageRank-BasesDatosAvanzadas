@@ -192,7 +192,7 @@ func endProcess(iteration int) {
 	for i := 1; i <= nodesCount; i++ {
 		pagerank, _ := pageRanks.Load(i)
 		totalsum += pagerank.(float64)
-		_, _ = datawriter.WriteString(strconv.FormatFloat(pagerank.(float64), 'f', 6, 64) + "\n")
+		_, _ = datawriter.WriteString(strconv.FormatFloat(pagerank.(float64), 'f', 25, 64) + "\n")
 		//fmt.Println("Edge ", i, ", ", "Page Rank: ", pagerank.(float64), ", Outlinks:", outLinks[i])
 		fmt.Println("Edge ", i, ", ", "Page Rank: ", pagerank.(float64))
 	}
