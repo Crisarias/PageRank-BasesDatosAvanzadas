@@ -17,11 +17,14 @@ import (
 var beta float64
 var nodesCount int
 var initialPageRank float64
+
 var pageRanks sync.Map
-var oldPageRanks map[int]float64
 var inLinks map[int]*models.InLinks
+
 var outLinks map[int][]int
 var convergence bool
+
+const convergenceDifference = 0.0000001
 
 const ResultsTxT = "results\results.txt"
 
@@ -167,27 +170,18 @@ func reducerAggregation(input chan interface{}, output chan interface{}) {
 	for new_matches := range input {
 		for _, vertex := range new_matches.(map[int]models.InLinks) {
 			var pageRank = ((1.0 - beta) / float64(nodesCount)) + (beta * (vertex.SumPageRanks))
-			old, _ := pageRanks.Load(vertex.Id)
-			oldPageRanks[vertex.Id] = old.(float64)
+			old, ok := pageRanks.Load(vertex.Id)
+			if convergence && ok && (math.Abs(pageRank-old.(float64)) > convergenceDifference) {
+				convergence = false
+			}
 			pageRanks.Store(vertex.Id, pageRank)
 		}
 	}
 	output <- results
 }
 
-func validate() {
-	convergence = true
-	for index := 0; index < nodesCount; index++ {
-		pagerank, ok := pageRanks.Load(index)
-		if ok && math.Abs(pagerank.(float64)-oldPageRanks[index]) > 0.000001 {
-			convergence = false
-			break
-		}
-	}
-}
-
 //Write results files
-func endProcess() {
+func endProcess(iteration int) {
 	totalsum := 0.0
 	fmt.Println("Writing final pageRanks")
 	os.Remove("Results.txt")
@@ -203,7 +197,8 @@ func endProcess() {
 	}
 	datawriter.Flush()
 	file.Close()
-	fmt.Println("Final Total", totalsum)
+	fmt.Println("All nodes converge with +/- ", convergenceDifference, " after iteration", iteration)
+	fmt.Println("Sum of all page ranks ", totalsum)
 }
 
 func main() {
@@ -230,30 +225,28 @@ func main() {
 	}
 	fmt.Println("Processing....")
 	readNodesCount("./inputFile/testFile.txt")
-	initialPageRank = 1
+	initialPageRank = (float64)(1 / nodesCount)
 	outLinks = make(map[int][]int, nodesCount)
 	convergence = false
 	//Start iteration cycle
 	cont := 0
-	//Iterate until convergence or iteration 20
-	for !convergence && cont < 1000 {
+	//Iterate until convergence
+	for !convergence {
+		convergence = true
 		inLinks = make(map[int]*models.InLinks, nodesCount)
-		oldPageRanks = make(map[int]float64, nodesCount)
 		var wg sync.WaitGroup
-		fmt.Println("Calculating Edges.....")
+		//fmt.Println("Calculating Edges.....")
 		// Get all page ranks for edges
-		mapreduce.MapReduce(mapFunc, reducer, find_lines("./inputFile/testFile.txt"), &wg, nodesCount)
+		mapreduce.MapReduce(mapFunc, reducer, find_lines("./inputFile/testFile.txt"), &wg, 50)
 		wg.Wait() //Wait all reducers to finish in order to have all the edges with all the information
 		var wg2 sync.WaitGroup
-		fmt.Println("Calculating Page Ranks.....")
+		//fmt.Println("Calculating Page Ranks.....")
 		//Calculate all page ranks for vertex based on sum of the page ranks of the incoming links edges
-		mapreduce.MapReduceAggregation(mapFuncAggregation, reducerAggregation, aggregation_input(), &wg2, nodesCount)
+		mapreduce.MapReduceAggregation(mapFuncAggregation, reducerAggregation, aggregation_input(), &wg2, 50)
 		//Wait all reducers to finish in order to have all the vertex with all the information
 		wg2.Wait()
-		//Validate threshold
-		validate()
 		fmt.Println("Iteration", cont, "Completed")
 		cont++
 	}
-	endProcess()
+	endProcess(cont)
 }
