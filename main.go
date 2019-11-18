@@ -22,14 +22,14 @@ var initialPageRank float64
 var pageRanks map[int]float64
 var mutex = &sync.RWMutex{}
 var inLinks map[int]*models.InLinks
-var lines map[int]*models.Line
+var lines []models.Line
 
 var outLinks map[int][]int
 var convergence bool
 
 const convergenceDifference = 0.00000001
 
-const ResultsTxT = "results\results.txt"
+const inputFile = "./inputFile/testFile.txt"
 
 func check(e error) {
 	if e != nil {
@@ -38,8 +38,8 @@ func check(e error) {
 	}
 }
 
-func readNodesCount(filename string) {
-	file, err := os.Open(filename)
+func readNodesCount() {
+	file, err := os.Open(inputFile)
 	check(err)
 	defer file.Close()
 	scanner := bufio.NewScanner(file)
@@ -56,11 +56,11 @@ func readNodesCount(filename string) {
 	}
 }
 
-func find_lines(fileName string) chan models.Line {
+func find_lines() chan models.Line {
 	output := make(chan models.Line)
 
 	go func() {
-		file, err := os.Open("./inputFile/testFile.txt")
+		file, err := os.Open(inputFile)
 		check(err)
 		defer file.Close()
 		scanner := bufio.NewScanner(file)
@@ -79,7 +79,7 @@ func find_lines(fileName string) chan models.Line {
 					}
 					check(err)
 				}
-				lines[cont] = &line
+				lines[cont-1] = line
 				output <- line
 			}
 			cont++
@@ -95,8 +95,8 @@ func find_lines(fileName string) chan models.Line {
 func send_lines() chan models.Line {
 	output := make(chan models.Line)
 	go func() {
-		for i := 1; i <= nodesCount; i++ {
-			output <- *lines[i]
+		for i := 0; i < nodesCount; i++ {
+			output <- lines[i]
 		}
 		close(output)
 	}()
@@ -250,9 +250,9 @@ func main() {
 		}
 	}
 	fmt.Println("Processing....")
-	readNodesCount("./inputFile/testFile.txt")
+	readNodesCount()
 	initialPageRank = (float64)(1 / nodesCount)
-	lines = make(map[int]*models.Line, nodesCount)
+	lines = make([]models.Line, nodesCount)
 	pageRanks = make(map[int]float64, nodesCount)
 	outLinks = make(map[int][]int, nodesCount)
 	convergence = false
@@ -268,7 +268,7 @@ func main() {
 		//fmt.Println("Calculating Edges.....")
 		// Get all page ranks for edges
 		if cont == 0 {
-			mapreduce.MapReduce(mapFunc, reducer, find_lines("./inputFile/testFile.txt"), &wg, int(poolSize))
+			mapreduce.MapReduce(mapFunc, reducer, find_lines(), &wg, int(poolSize))
 		} else {
 			mapreduce.MapReduce(mapFunc, reducer, send_lines(), &wg, int(poolSize))
 		}
