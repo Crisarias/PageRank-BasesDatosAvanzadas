@@ -12,12 +12,13 @@ file.write(str(CantNodos)+"\n")
 #file.write(os.linesep)
 #file.write(str(CantNodos)+os.linesep)
 for lineas in range(CantNodos):
-    cantvertex =  100
-    
+    cantvertex =  random.randrange(CantNodos) - 1 
+    if cantvertex > 100:
+        cantvertex = 100
  #   print(lineas,end = '')
-    print(lineas, end='')
+    print(lineas+1, end='')
     #file.write(str(lineas) + " ")
-    lista = [lineas]
+    lista = [lineas+1]
     for x in range(cantvertex):
         linkto = random.randrange(CantNodos)
         while linkto in lista:
