@@ -19,13 +19,15 @@ var beta float64
 var nodesCount int
 var initialPageRank float64
 
-var pageRanks sync.Map
+var pageRanks map[int]float64
+var mutex = &sync.RWMutex{}
 var inLinks map[int]*models.InLinks
+var lines map[int]*models.Line
 
 var outLinks map[int][]int
 var convergence bool
 
-const convergenceDifference = 0.0000001
+const convergenceDifference = 0.00000001
 
 const ResultsTxT = "results\results.txt"
 
@@ -77,12 +79,24 @@ func find_lines(fileName string) chan models.Line {
 					}
 					check(err)
 				}
+				lines[cont] = &line
 				output <- line
 			}
 			cont++
 		}
 		if err := scanner.Err(); err != nil {
 			check(err)
+		}
+		close(output)
+	}()
+	return output
+}
+
+func send_lines() chan models.Line {
+	output := make(chan models.Line)
+	go func() {
+		for i := 1; i <= nodesCount; i++ {
+			output <- *lines[i]
 		}
 		close(output)
 	}()
@@ -112,10 +126,15 @@ func mapFunc(line models.Line, output chan interface{}) {
 	results := map[int]models.Vertex{}
 	var vertex = models.Vertex{Id: line.Id}
 	//Get PageRank if not exist assign initial
-	if val, ok := pageRanks.Load(vertex.Id); ok {
-		vertex.PageRank = val.(float64)
+	mutex.RLock()
+	if val, ok := pageRanks[vertex.Id]; ok {
+		mutex.RUnlock()
+		vertex.PageRank = val
 	} else {
-		pageRanks.Store(vertex.Id, initialPageRank)
+		mutex.RUnlock()
+		mutex.Lock()
+		pageRanks[vertex.Id] = initialPageRank
+		mutex.Unlock()
 		vertex.PageRank = initialPageRank
 	}
 	//If have no outlinks has to link to all
@@ -125,7 +144,7 @@ func mapFunc(line models.Line, output chan interface{}) {
 		index := 0
 		for i := 1; i <= nodesCount; i++ {
 			if (i) != vertex.Id {
-				vertex.Edges[index] = models.Edge{Src_id: vertex.Id, Dest_id: i, PageRank: outGoingPageRank}
+				vertex.Edges[index] = models.Edge{Dest_id: i, PageRank: outGoingPageRank}
 				index++
 			}
 		}
@@ -134,7 +153,7 @@ func mapFunc(line models.Line, output chan interface{}) {
 		outGoingPageRank := vertex.PageRank / float64(outgoingTotal)
 		vertex.Edges = make([]models.Edge, outgoingTotal, outgoingTotal)
 		for i := range line.Out {
-			vertex.Edges[i] = models.Edge{Src_id: vertex.Id, Dest_id: line.Out[i], PageRank: outGoingPageRank}
+			vertex.Edges[i] = models.Edge{Dest_id: line.Out[i], PageRank: outGoingPageRank}
 		}
 	}
 
@@ -171,11 +190,15 @@ func reducerAggregation(input chan interface{}, output chan interface{}) {
 	for new_matches := range input {
 		for _, vertex := range new_matches.(map[int]models.InLinks) {
 			var pageRank = ((1.0 - beta) / float64(nodesCount)) + (beta * (vertex.SumPageRanks))
-			old, ok := pageRanks.Load(vertex.Id)
-			if convergence && ok && (math.Abs(pageRank-old.(float64)) > convergenceDifference) {
+			mutex.RLock()
+			old, ok := pageRanks[vertex.Id]
+			mutex.RUnlock()
+			mutex.Lock()
+			pageRanks[vertex.Id] = pageRank
+			mutex.Unlock()
+			if convergence && ok && (math.Abs(pageRank-old) > convergenceDifference) {
 				convergence = false
 			}
-			pageRanks.Store(vertex.Id, pageRank)
 		}
 	}
 	output <- results
@@ -190,11 +213,11 @@ func endProcess(iteration int) {
 	check(err)
 	datawriter := bufio.NewWriter(file)
 	for i := 1; i <= nodesCount; i++ {
-		pagerank, _ := pageRanks.Load(i)
-		totalsum += pagerank.(float64)
-		_, _ = datawriter.WriteString(strconv.FormatFloat(pagerank.(float64), 'f', 25, 64) + "\n")
+		pagerank, _ := pageRanks[i]
+		totalsum += pagerank
+		_, _ = datawriter.WriteString(strconv.FormatFloat(pagerank, 'f', 25, 64) + "\n")
 		//fmt.Println("Edge ", i, ", ", "Page Rank: ", pagerank.(float64), ", Outlinks:", outLinks[i])
-		fmt.Println("Edge ", i, ", ", "Page Rank: ", pagerank.(float64))
+		fmt.Println("Edge ", i, ", ", "Page Rank: ", pagerank)
 	}
 	datawriter.Flush()
 	file.Close()
@@ -229,10 +252,14 @@ func main() {
 	fmt.Println("Processing....")
 	readNodesCount("./inputFile/testFile.txt")
 	initialPageRank = (float64)(1 / nodesCount)
+	lines = make(map[int]*models.Line, nodesCount)
+	pageRanks = make(map[int]float64, nodesCount)
 	outLinks = make(map[int][]int, nodesCount)
 	convergence = false
 	//Start iteration cycle
 	cont := 0
+	//Set pool size
+	poolSize := float64(nodesCount) * 0.0002
 	//Iterate until convergence
 	for !convergence {
 		convergence = true
@@ -240,12 +267,16 @@ func main() {
 		var wg sync.WaitGroup
 		//fmt.Println("Calculating Edges.....")
 		// Get all page ranks for edges
-		mapreduce.MapReduce(mapFunc, reducer, find_lines("./inputFile/testFile.txt"), &wg, 50)
+		if cont == 0 {
+			mapreduce.MapReduce(mapFunc, reducer, find_lines("./inputFile/testFile.txt"), &wg, int(poolSize))
+		} else {
+			mapreduce.MapReduce(mapFunc, reducer, send_lines(), &wg, int(poolSize))
+		}
 		wg.Wait() //Wait all reducers to finish in order to have all the edges with all the information
 		var wg2 sync.WaitGroup
 		//fmt.Println("Calculating Page Ranks.....")
 		//Calculate all page ranks for vertex based on sum of the page ranks of the incoming links edges
-		mapreduce.MapReduceAggregation(mapFuncAggregation, reducerAggregation, aggregation_input(), &wg2, 50)
+		mapreduce.MapReduceAggregation(mapFuncAggregation, reducerAggregation, aggregation_input(), &wg2, int(poolSize))
 		//Wait all reducers to finish in order to have all the vertex with all the information
 		wg2.Wait()
 		fmt.Println("Iteration", cont, "Completed")

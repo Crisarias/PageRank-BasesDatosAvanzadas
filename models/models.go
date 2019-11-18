@@ -7,7 +7,6 @@ type Vertex struct {
 }
 
 type Edge struct {
-	Src_id   int
 	Dest_id  int
 	PageRank float64
 }
