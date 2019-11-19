@@ -27,7 +27,7 @@ var lines []models.Line
 var outLinks map[int][]int
 var convergence bool
 
-const convergenceDifference = 0.00000001
+const convergenceDifference = 0.000000001
 
 const inputFile = "./inputFile/testFile.txt"
 
@@ -94,6 +94,20 @@ func find_lines() chan models.Line {
 	return output
 }
 
+func clean_inLinks() {
+	if inLinks == nil {
+		inLinks = make(map[int]*models.InLinks, nodesCount)
+	}
+	for i := 0; i < nodesCount; i++ {
+		if inLink, ok := inLinks[i]; ok {
+			inLink.SumPageRanks = 0
+
+		} else {
+			inLinks[i] = &models.InLinks{Id: i, SumPageRanks: 0}
+		}
+	}
+}
+
 func send_lines() chan models.Line {
 	output := make(chan models.Line)
 	go func() {
@@ -107,17 +121,9 @@ func send_lines() chan models.Line {
 
 func aggregation_input() chan models.InLinks {
 	output := make(chan models.InLinks)
-	cont := nodesCount
 	go func() {
-		for i := 0; i < cont; i++ {
-			if _, ok := inLinks[i]; ok {
-				output <- *inLinks[i]
-			} else {
-				//If the node has no inlinks pass to the reducer with a sumPageRanks of 0
-				inLinks[i] = &models.InLinks{Id: i}
-				inLinks[i].SumPageRanks = 0
-				output <- *inLinks[i]
-			}
+		for _, inLink := range inLinks {
+			output <- *inLink
 		}
 		close(output)
 	}()
@@ -178,8 +184,7 @@ func reducer(input chan interface{}, output chan interface{}) {
 				if _, ok := inLinks[edge.Dest_id]; ok {
 					inLinks[edge.Dest_id].SumPageRanks = inLinks[edge.Dest_id].SumPageRanks + edge.PageRank
 				} else {
-					inLinks[edge.Dest_id] = &models.InLinks{Id: edge.Dest_id}
-					inLinks[edge.Dest_id].SumPageRanks = inLinks[edge.Dest_id].SumPageRanks + edge.PageRank
+					fmt.Println("ERROR")
 				}
 			}
 		}
@@ -265,7 +270,7 @@ func main() {
 	//Iterate until convergence
 	for !convergence {
 		convergence = true
-		inLinks = make(map[int]*models.InLinks, nodesCount)
+		clean_inLinks()
 		var wg sync.WaitGroup
 		//fmt.Println("Calculating Edges.....")
 		// Get all page ranks for edges
