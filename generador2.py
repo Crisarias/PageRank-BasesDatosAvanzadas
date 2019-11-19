@@ -5,7 +5,7 @@ import random
 
 CantNodos = int(input("Cantidad de nodos "))
 
-file = open("./filename.txt", "w")
+file = open("./inputFile/testFile.txt", "w")
 #CantNodos = random.randrange(100)
 print(CantNodos)
 file.write(str(CantNodos)+"\n")
