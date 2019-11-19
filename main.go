@@ -67,7 +67,7 @@ func find_lines() chan models.Line {
 		cont := 0
 		for scanner.Scan() {
 			if cont > 0 {
-				line := models.Line{Id: (cont)}
+				line := models.Line{Id: (cont - 1)}
 				outgoing := strings.Split(scanner.Text(), " ")
 				outgoingTotal := len(outgoing)
 				line.Out = make([]int, outgoingTotal, outgoingTotal)
@@ -107,7 +107,7 @@ func aggregation_input() chan models.InLinks {
 	output := make(chan models.InLinks)
 	cont := nodesCount
 	go func() {
-		for i := 1; i <= cont; i++ {
+		for i := 0; i < cont; i++ {
 			if _, ok := inLinks[i]; ok {
 				output <- *inLinks[i]
 			} else {
@@ -142,7 +142,7 @@ func mapFunc(line models.Line, output chan interface{}) {
 		outGoingPageRank := vertex.PageRank / float64(nodesCount-1)
 		vertex.Edges = make([]models.Edge, nodesCount-1, nodesCount-1)
 		index := 0
-		for i := 1; i <= nodesCount; i++ {
+		for i := 0; i < nodesCount; i++ {
 			if (i) != vertex.Id {
 				vertex.Edges[index] = models.Edge{Dest_id: i, PageRank: outGoingPageRank}
 				index++
@@ -212,7 +212,7 @@ func endProcess(iteration int) {
 	file, err := os.OpenFile("Results.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	check(err)
 	datawriter := bufio.NewWriter(file)
-	for i := 1; i <= nodesCount; i++ {
+	for i := 0; i < nodesCount; i++ {
 		pagerank, _ := pageRanks[i]
 		totalsum += pagerank
 		_, _ = datawriter.WriteString(strconv.FormatFloat(pagerank, 'f', 25, 64) + "\n")
@@ -223,6 +223,7 @@ func endProcess(iteration int) {
 	file.Close()
 	fmt.Println("All nodes converge with +/- ", convergenceDifference, " after iteration", iteration)
 	fmt.Println("Sum of all page ranks ", totalsum)
+	fmt.Println("InitialPageRank", initialPageRank)
 }
 
 func main() {
@@ -252,6 +253,7 @@ func main() {
 	fmt.Println("Processing....")
 	readNodesCount()
 	initialPageRank = (float64)(1 / nodesCount)
+	fmt.Println("InitialPageRank", initialPageRank)
 	lines = make([]models.Line, nodesCount)
 	pageRanks = make(map[int]float64, nodesCount)
 	outLinks = make(map[int][]int, nodesCount)
