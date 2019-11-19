@@ -44,9 +44,11 @@ func readNodesCount() {
 	defer file.Close()
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		if s, err := strconv.Atoi(scanner.Text()); err == nil {
-			nodesCount = s
+		if s, err := strconv.ParseFloat(scanner.Text(), 64); err == nil {
+			nodesCount = int(s)
+			initialPageRank = (1 / s)
 			fmt.Println("Node count is ", nodesCount)
+			fmt.Println("Initial pageRank is ", initialPageRank)
 		}
 		check(err)
 		break
@@ -252,8 +254,6 @@ func main() {
 	}
 	fmt.Println("Processing....")
 	readNodesCount()
-	initialPageRank = (float64)(1 / nodesCount)
-	fmt.Println("InitialPageRank", initialPageRank)
 	lines = make([]models.Line, nodesCount)
 	pageRanks = make(map[int]float64, nodesCount)
 	outLinks = make(map[int][]int, nodesCount)
